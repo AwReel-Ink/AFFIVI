@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f1419" />
+  <meta name="description" content="AffiVi — Vitesse GPS calibrée et conforme" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="AffiVi" />
+
+  <title>AffiVi</title>
+
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" href="icons/icon-192.png" sizes="192x192" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <link rel="stylesheet" href="styles.css" />
+
+  <!-- SortableJS via CDN (chargé avant les modules) -->
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+</head>
+<body data-theme="dark">
+
+  <!-- ═══════════════════════════════════════════
+       ÉCRAN DE CONDUITE (écran principal)
+  ════════════════════════════════════════════ -->
+  <div id="screen-drive" class="screen active" role="main" aria-label="Écran de conduite">
+
+    <!-- Bandeau supérieur -->
+    <header class="topbar" role="banner">
+      <button
+        id="btn-profile-badge"
+        class="profile-badge"
+        aria-label="Véhicule actif — ouvrir la liste des véhicules"
+        title="Mes véhicules"
+      >
+        <span class="profile-badge__icon" aria-hidden="true">🚗</span>
+        <span id="profile-badge-name" class="profile-badge__name">Standard</span>
+      </button>
+
+      <div class="gps-status" aria-live="polite" aria-label="État du signal GPS">
+        <span id="gps-icon" class="gps-status__icon" aria-hidden="true">●</span>
+        <span id="gps-label" class="gps-status__label" aria-label="Signal GPS inconnu">GPS</span>
+      </div>
+
+      <button
+        id="btn-settings"
+        class="btn-icon"
+        aria-label="Ouvrir les réglages"
+        title="Réglages"
+      >
+        <span aria-hidden="true">⚙️</span>
+      </button>
+    </header>
+
+    <!-- Zone vitesse principale -->
+    <main class="speed-zone" aria-live="polite" aria-label="Vitesse actuelle">
+      <div class="speed-display" id="speed-display" aria-label="Vitesse">
+        <span id="speed-value" class="speed-value" aria-live="polite">--</span>
+        <span id="speed-unit" class="speed-unit" aria-label="unité">km/h</span>
+      </div>
+
+      <!-- Barre de couleur légale -->
+      <div
+        class="legal-bar-wrapper"
+        role="img"
+        aria-label="Indicateur de respect de la limite de vitesse"
+      >
+        <div id="legal-bar" class="legal-bar legal-bar--unknown"></div>
+        <div class="legal-limit-info" aria-live="polite">
+          <span id="country-flag" class="legal-limit-info__flag" aria-hidden="true"></span>
+          <span id="legal-limit-text" class="legal-limit-info__text">Sélectionnez un pays</span>
+        </div>
+      </div>
+    </main>
+
+    <!-- Sélecteur type de route -->
+    <nav
+      class="road-type-selector"
+      aria-label="Type de route"
+      role="navigation"
+    >
+      <button
+        class="road-type-btn active"
+        data-road="auto"
+        aria-pressed="true"
+        aria-label="Mode automatique"
+        title="Détection automatique"
+      >
+        <span class="road-type-btn__icon" aria-hidden="true">🔄</span>
+        <span class="road-type-btn__label">Auto</span>
+      </button>
+      <button
+        class="road-type-btn"
+        data-road="city"
+        aria-pressed="false"
+        aria-label="Ville"
+      >
+        <span class="road-type-btn__icon" aria-hidden="true">🏙️</span>
+        <span class="road-type-btn__label">Ville</span>
+      </button>
+      <button
+        class="road-type-btn"
+        data-road="road"
+        aria-pressed="false"
+        aria-label="Route"
+      >
+        <span class="road-type-btn__icon" aria-hidden="true">🛣️</span>
+        <span class="road-type-btn__label">Route</span>
+      </button>
+      <button
+        class="road-type-btn"
+        data-road="expressway"
+        aria-pressed="false"
+        aria-label="Voie rapide"
+      >
+        <span class="road-type-btn__icon" aria-hidden="true">🚗</span>
+        <span class="road-type-btn__label">Voie rapide</span>
+      </button>
+      <button
+        class="road-type-btn"
+        data-road="highway"
+        aria-pressed="false"
+        aria-label="Autoroute"
+      >
+        <span class="road-type-btn__icon" aria-hidden="true">🛤️</span>
+        <span class="road-type-btn__label">Autoroute</span>
+      </button>
+    </nav>
+
+    <!-- Indicateur marge de sécurité (discret, bas d'écran) -->
+    <footer class="drive-footer">
+      <span id="safety-margin-indicator" class="safety-margin-indicator" aria-live="polite"></span>
+    </footer>
+
+  </div><!-- /#screen-drive -->
+
+  <!-- ═══════════════════════════════════════════
+       ÉCRANS SECONDAIRES (injectés dynamiquement)
+  ════════════════════════════════════════════ -->
+  <div id="screen-profiles" class="screen slide-screen" role="dialog" aria-modal="true" aria-label="Mes véhicules" hidden></div>
+  <div id="screen-calibration" class="screen slide-screen" role="dialog" aria-modal="true" aria-label="Calibration" hidden></div>
+  <div id="screen-country" class="screen slide-screen" role="dialog" aria-modal="true" aria-label="Pays et limites" hidden></div>
+  <div id="screen-settings" class="screen slide-screen" role="dialog" aria-modal="true" aria-label="Réglages" hidden></div>
+
+  <!-- Toast de notification -->
+  <div id="toast" class="toast" role="alert" aria-live="assertive" aria-atomic="true"></div>
+
+  <!-- Point d'entrée JS (module) -->
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
