@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#0a0a0f" id="meta-theme" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="AFFIVI" />
+  <title>AFFIVI</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="stylesheet" href="style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Rajdhani:wght@600;700&family=Exo+2:wght@300;700&family=Quicksand:wght@500;700&family=Cinzel:wght@700&family=Nunito:wght@300;700&display=swap" rel="stylesheet" />
+</head>
+<body class="theme-dark" id="app-body">
+
+  <!-- ÉCRAN PRINCIPAL -->
+  <main class="main-screen" id="main-screen">
+
+    <!-- HEADER -->
+    <header class="top-bar">
+      <div class="signal-block">
+        <div class="signal-bars" id="signal-bars">
+          <span class="bar b1"></span>
+          <span class="bar b2"></span>
+          <span class="bar b3"></span>
+          <span class="bar b4"></span>
+        </div>
+        <span class="signal-label" id="signal-label">GPS</span>
+      </div>
+
+      <div class="app-name">AFFIVI</div>
+
+      <div class="top-right">
+        <div class="lag-block" id="lag-block">
+          <span class="lag-icon" id="lag-icon">⏱</span>
+          <span class="lag-value" id="lag-value">--</span>
+        </div>
+        <button class="settings-btn" id="settings-btn" aria-label="Paramètres">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06
+              a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09
+              A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83
+              l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09
+              A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83
+              l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09
+              a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83
+              l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09
+              a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- VITESSE ACTUELLE -->
+    <section class="speed-section" id="speed-section">
+      <div class="speed-wrapper">
+        <div class="speed-value" id="speed-value">--</div>
+        <div class="speed-unit">km/h</div>
+      </div>
+      <button class="start-btn" id="start-btn">Activer le GPS</button>
+    </section>
+
+    <!-- LIMITATION -->
+    <section class="limit-section" id="limit-section">
+      <div class="limit-sign">
+        <div class="limit-ring" id="limit-ring">
+          <div class="limit-inner">
+            <span class="limit-number" id="limit-number">--</span>
+          </div>
+        </div>
+        <div class="limit-label" id="limit-label">Limitation</div>
+      </div>
+      <div class="road-type" id="road-type"></div>
+    </section>
+
+  </main>
+
+  <!-- PANNEAU PARAMÈTRES -->
+  <aside class="settings-panel" id="settings-panel" aria-hidden="true">
+    <div class="settings-inner">
+
+      <div class="settings-header">
+        <div class="settings-title-block">
+          <span class="settings-app-name">AFFIVI</span>
+          <h2 class="settings-title">Paramètres</h2>
+        </div>
+        <button class="close-btn" id="close-btn" aria-label="Fermer">✕</button>
+      </div>
+
+      <div class="settings-body">
+
+        <!-- THÈMES -->
+        <section class="settings-section">
+          <h3 class="section-label">Thème</h3>
+          <div class="theme-grid" id="theme-grid">
+            <button class="theme-btn active" data-theme="dark">
+              <span class="theme-preview dark-prev"></span>
+              <span>Sombre</span>
+            </button>
+            <button class="theme-btn" data-theme="light">
+              <span class="theme-preview light-prev"></span>
+              <span>Clair</span>
+            </button>
+            <button class="theme-btn" data-theme="space">
+              <span class="theme-preview space-prev"></span>
+              <span>Espace</span>
+            </button>
+            <button class="theme-btn" data-theme="ocean">
+              <span class="theme-preview ocean-prev"></span>
+              <span>Océan</span>
+            </button>
+            <button class="theme-btn" data-theme="nature">
+              <span class="theme-preview nature-prev"></span>
+              <span>Nature</span>
+            </button>
+            <button class="theme-btn" data-theme="zen">
+              <span class="theme-preview zen-prev"></span>
+              <span>Zen</span>
+            </button>
+          </div>
+        </section>
+
+        <!-- SEUIL LAG -->
+        <section class="settings-section">
+          <h3 class="section-label">Alerte signal GPS</h3>
+          <p class="section-desc">Délai sans mise à jour GPS avant alerte</p>
+          <div class="lag-options" id="lag-options">
+            <button class="lag-opt" data-lag="2">2s</button>
+            <button class="lag-opt active" data-lag="3">3s</button>
+            <button class="lag-opt" data-lag="5">5s</button>
+          </div>
+        </section>
+
+        <!-- DÉDOUANEMENT -->
+        <section class="settings-section disclaimer-section">
+          <h3 class="section-label">Informations légales</h3>
+          <p class="disclaimer-text">
+            AFFIVI (AFFIchage VItesse) est fournie à titre informatif uniquement.
+            Les données de vitesse et de limitation proviennent du GPS de votre appareil
+            et d'OpenStreetMap, et peuvent être inexactes ou non à jour.
+            L'utilisation d'AFFIVI ne dispense en aucun cas le conducteur de respecter
+            le Code de la Route et les panneaux de signalisation en vigueur.
+            Le créateur décline toute responsabilité en cas d'accident, d'infraction
+            ou de dommage résultant de l'utilisation de cette application.
+          </p>
+        </section>
+
+      </div>
+
+      <!-- FOOTER CRÉATEUR -->
+      <footer class="settings-footer">
+        <div class="footer-logo">AFFIVI</div>
+        <span class="footer-copy">© 2026 — LEROY Aurélien — Tous droits réservés</span>
+      </footer>
+
+    </div>
+  </aside>
+
+  <!-- OVERLAY -->
+  <div class="overlay" id="overlay"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

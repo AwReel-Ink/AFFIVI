@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8"/>
+  <title>AFFIVI — Générateur d'icônes</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0a0a0f;
+      color: #e8e8f0;
+      font-family: 'Segoe UI', sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      gap: 32px;
+      padding: 32px;
+    }
+    h1 {
+      font-size: 28px;
+      letter-spacing: 0.3em;
+      color: #00d4ff;
+      text-transform: uppercase;
+    }
+    h1 span { color: #888; font-size: 14px; letter-spacing: 0.1em; display: block; margin-top: 4px; }
+    .canvases {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 40px;
+      justify-content: center;
+      align-items: flex-end;
+    }
+    .canvas-block {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+    }
+    canvas {
+      border-radius: 22.5%;
+      box-shadow: 0 0 40px rgba(0,212,255,0.25);
+    }
+    .label {
+      font-size: 13px;
+      color: #8888aa;
+      letter-spacing: 0.08em;
+    }
+    button {
+      background: #00d4ff;
+      color: #0a0a0f;
+      border: none;
+      border-radius: 50px;
+      padding: 12px 36px;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      transition: opacity 0.2s, transform 0.15s;
+    }
+    button:hover  { opacity: 0.85; }
+    button:active { transform: scale(0.95); }
+    .btn-row { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; }
+  </style>
+</head>
+<body>
+
+<h1>AFFIVI <span>Générateur d'icônes PWA</span></h1>
+
+<div class="canvases">
+  <div class="canvas-block">
+    <canvas id="c192" width="192" height="192"></canvas>
+    <div class="label">192 × 192 px</div>
+    <button onclick="download('c192','icon-192.png')">⬇ Télécharger</button>
+  </div>
+  <div class="canvas-block">
+    <canvas id="c512" width="512" height="512"></canvas>
+    <div class="label">512 × 512 px</div>
+    <button onclick="download('c512','icon-512.png')">⬇ Télécharger</button>
+  </div>
+</div>
+
+<div class="btn-row">
+  <button onclick="downloadAll()">⬇ Tout télécharger</button>
+</div>
+
+<script>
+function drawIcon(canvas) {
+  const s  = canvas.width;
+  const cx = s / 2;
+  const cy = s / 2;
+  const ctx = canvas.getContext('2d');
+  const sc = s / 192; // facteur d'échelle basé sur 192
+
+  // ── Fond dégradé ──────────────────────────
+  const bgGrad = ctx.createRadialGradient(cx, cy*0.85, 0, cx, cy, s*0.72);
+  bgGrad.addColorStop(0,   '#1a1a3a');
+  bgGrad.addColorStop(0.6, '#0d0d20');
+  bgGrad.addColorStop(1,   '#020208');
+  ctx.fillStyle = bgGrad;
+  roundRect(ctx, 0, 0, s, s, s * 0.2175);
+  ctx.fill();
+
+  // ── Cadran compteur ───────────────────────
+  const dialR  = s * 0.36;
+  const dialCX = cx;
+  const dialCY = cy * 0.97;
+
+  // Cercle extérieur brillant
+  const rimGrad = ctx.createLinearGradient(dialCX - dialR, dialCY - dialR, dialCX + dialR, dialCY + dialR);
+  rimGrad.addColorStop(0, '#4488cc');
+  rimGrad.addColorStop(0.5, '#002244');
+  rimGrad.addColorStop(1, '#00d4ff55');
+  ctx.beginPath();
+  ctx.arc(dialCX, dialCY, dialR, 0, Math.PI * 2);
+  ctx.strokeStyle = rimGrad;
+  ctx.lineWidth = sc * 5;
+  ctx.stroke();
+
+  // Fond du cadran
+  const dialGrad = ctx.createRadialGradient(dialCX, dialCY - dialR*0.2, 0, dialCX, dialCY, dialR);
+  dialGrad.addColorStop(0,   '#1e2a4a');
+  dialGrad.addColorStop(0.7, '#0d1428');
+  dialGrad.addColorStop(1,   '#070e1c');
+  ctx.beginPath();
+  ctx.arc(dialCX, dialCY, dialR - sc*2.5, 0, Math.PI * 2);
+  ctx.fillStyle = dialGrad;
+  ctx.fill();
+
+  // ── Graduations ───────────────────────────
+  const startAngle = Math.PI * 0.75;
+  const endAngle   = Math.PI * 2.25;
+  const totalAngle = endAngle - startAngle;
+  const ticks      = 24;
+
+  for (let i = 0; i <= ticks; i++) {
+    const angle  = startAngle + (i / ticks) * totalAngle;
+    const isMaj  = i % 4 === 0;
+    const inner  = dialR * (isMaj ? 0.72 : 0.80);
+    const outer  = dialR * 0.91;
+    const cosA   = Math.cos(angle);
+    const sinA   = Math.sin(angle);
+    ctx.beginPath();
+    ctx.moveTo(dialCX + cosA * inner, dialCY + sinA * inner);
+    ctx.lineTo(dialCX + cosA * outer, dialCY + sinA * outer);
+    const ratio  = i / ticks;
+    ctx.strokeStyle = ratio > 0.75
+      ? `rgba(255,80,80,${isMaj ? 0.9 : 0.5})`
+      : `rgba(0,212,255,${isMaj ? 0.85 : 0.4})`;
+    ctx.lineWidth   = isMaj ? sc * 3 : sc * 1.5;
+    ctx.lineCap     = 'round';
+    ctx.stroke();
+  }
+
+  // ── Arc de progression ────────────────────
+  const arcGrad = ctx.createLinearGradient(
+    dialCX + Math.cos(startAngle)*dialR,
+    dialCY + Math.sin(startAngle)*dialR,
+    dialCX + Math.cos(endAngle)*dialR,
+    dialCY + Math.sin(endAngle)*dialR
+  );
+  arcGrad.addColorStop(0,    '#0066ff');
+  arcGrad.addColorStop(0.65, '#00d4ff');
+  arcGrad.addColorStop(0.82, '#ff9900');
+  arcGrad.addColorStop(1,    '#ff3355');
+
+  ctx.beginPath();
+  ctx.arc(dialCX, dialCY, dialR * 0.82, startAngle, startAngle + totalAngle * 0.62);
+  ctx.strokeStyle = arcGrad;
+  ctx.lineWidth   = sc * 4.5;
+  ctx.lineCap     = 'round';
+  ctx.stroke();
+
+  // ── Aiguille ──────────────────────────────
+  const needleAngle = startAngle + totalAngle * 0.62;
+  const needleLen   = dialR * 0.70;
+  const nTipX = dialCX + Math.cos(needleAngle) * needleLen;
+  const nTipY = dialCY + Math.sin(needleAngle) * needleLen;
+  const nBackX = dialCX + Math.cos(needleAngle + Math.PI) * dialR * 0.14;
+  const nBackY = dialCY + Math.sin(needleAngle + Math.PI) * dialR * 0.14;
+
+  const needleGrad = ctx.createLinearGradient(nBackX, nBackY, nTipX, nTipY);
+  needleGrad.addColorStop(0, '#ff9900');
+  needleGrad.addColorStop(1, '#ffffff');
+
+  ctx.beginPath();
+  ctx.moveTo(nBackX, nBackY);
+  ctx.lineTo(nTipX, nTipY);
+  ctx.strokeStyle = needleGrad;
+  ctx.lineWidth   = sc * 3;
+  ctx.lineCap     = 'round';
+  ctx.stroke();
+
+  // Centre de l'aiguille
+  ctx.beginPath();
+  ctx.arc(dialCX, dialCY, sc * 7, 0, Math.PI * 2);
+  const hubGrad = ctx.createRadialGradient(dialCX, dialCY, 0, dialCX, dialCY, sc*7);
+  hubGrad.addColorStop(0, '#ffffff');
+  hubGrad.addColorStop(1, '#00aacc');
+  ctx.fillStyle = hubGrad;
+  ctx.fill();
+
+  // ── Lueur derrière l'aiguille ─────────────
+  ctx.save();
+  ctx.globalCompositeOperation = 'screen';
+  const glowGrad = ctx.createRadialGradient(dialCX, dialCY, 0, dialCX, dialCY, dialR*0.55);
+  glowGrad.addColorStop(0,   'rgba(0,212,255,0.18)');
+  glowGrad.addColorStop(0.5, 'rgba(0,100,255,0.08)');
+  glowGrad.addColorStop(1,   'rgba(0,0,0,0)');
+  ctx.fillStyle = glowGrad;
+  ctx.beginPath();
+  ctx.arc(dialCX, dialCY, dialR, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // ── Texte "km/h" dans le cadran ───────────
+  ctx.fillStyle = 'rgba(150,200,255,0.65)';
+  ctx.font      = `${sc * 11}px 'Segoe UI', sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.fillText('km/h', dialCX, dialCY + dialR * 0.48);
+
+  // ── Nom AFFIVI ────────────────────────────
+  const textY = dialCY - dialR * 0.22;
+
+  // Halo derrière le texte
+  ctx.save();
+  ctx.shadowColor   = '#00d4ff';
+  ctx.shadowBlur    = sc * 18;
+  ctx.fillStyle     = '#00d4ff';
+  ctx.font          = `900 ${sc * 30}px 'Arial Black', 'Impact', sans-serif`;
+  ctx.letterSpacing = `${sc * 4}px`;
+  ctx.textAlign     = 'center';
+  ctx.fillText('AFFIVI', cx, textY);
+  ctx.restore();
+
+  // Texte principal
+  const textGrad = ctx.createLinearGradient(cx - s*0.22, textY - s*0.06, cx + s*0.22, textY);
+  textGrad.addColorStop(0, '#ffffff');
+  textGrad.addColorStop(0.4, '#aaeeff');
+  textGrad.addColorStop(1, '#00d4ff');
+  ctx.fillStyle   = textGrad;
+  ctx.font        = `900 ${sc * 30}px 'Arial Black', 'Impact', sans-serif`;
+  ctx.textAlign   = 'center';
+  ctx.fillText('AFFIVI', cx, textY);
+
+  // ── Sous-titre ────────────────────────────
+  ctx.fillStyle = 'rgba(100,160,220,0.65)';
+  ctx.font      = `${sc * 9}px 'Segoe UI', sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.fillText('AFFIchage VItesse', cx, textY + sc * 15);
+
+  // ── Reflet supérieur ──────────────────────
+  ctx.save();
+  const shineGrad = ctx.createLinearGradient(0, 0, 0, s * 0.45);
+  shineGrad.addColorStop(0,   'rgba(255,255,255,0.06)');
+  shineGrad.addColorStop(1,   'rgba(255,255,255,0)');
+  roundRect(ctx, 0, 0, s, s, s * 0.2175);
+  ctx.fillStyle = shineGrad;
+  ctx.fill();
+  ctx.restore();
+}
+
+// ── Utilitaire arrondi ────────────────────────
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+// ── Téléchargement ────────────────────────────
+function download(id, filename) {
+  const canvas = document.getElementById(id);
+  const link   = document.createElement('a');
+  link.download = filename;
+  link.href     = canvas.toDataURL('image/png');
+  link.click();
+}
+
+function downloadAll() {
+  download('c192', 'icon-192.png');
+  setTimeout(() => download('c512', 'icon-512.png'), 300);
+}
+
+// ── Rendu initial ─────────────────────────────
+drawIcon(document.getElementById('c192'));
+drawIcon(document.getElementById('c512'));
+</script>
+</body>
+</html>
