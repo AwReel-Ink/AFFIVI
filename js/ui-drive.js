@@ -1,177 +1,122 @@
-/**
- * ui-drive.js — AffiVi
- * Gestion de l'écran de conduite principal.
- * Étape 1 : affichage vitesse brute + état GPS + sélecteur type de route.
- * (Coefficients et barre légale seront branchés aux étapes 2 et 4.)
- */
+import { DB } from './db.js';
+import { COUNTRIES_2026, getLimitsFor, roadFromSpeed } from './countries.js';
 
-import { startGPS, stopGPS } from './gps.js';
-import { requestWakeLock }   from './wake-lock.js';
+export class DriveUI {
+  constructor() {
+    this.speedEl = document.getElementById('speed-value');
+    this.unitEl = document.getElementById('speed-unit');
+    this.gpsInd = document.getElementById('gps-indicator');
+    this.nameEl = document.getElementById('profile-name-display');
+    this.flagEl = document.getElementById('country-flag');
+    this.limitEl = document.getElementById('current-limit');
+    this.cursorEl = document.getElementById('legal-cursor');
+    this.safetyEl = document.getElementById('safety-indicator');
+    this.roadBtns = document.querySelectorAll('.road-btn');
 
-// ─── État local de l'écran de conduite ───────────────────────────────────────
-const state = {
-  currentSpeed:    0,       // km/h, après lissage
-  signalState:     'unknown',
-  roadType:        'auto',  // 'auto' | 'city' | 'road' | 'expressway' | 'highway'
-  // Étapes suivantes : coefficient, safetyMargin, activeCountry, limit...
-};
+    // État
+    this.profile = null;
+    this.country = 'FR';
+    this.overrides = {};
+    this.margin = 0;
+    this.unit = 'kmh';
+    this.roadType = 'auto';
+    this.currentSpeedKmh = 0;
 
-// ─── Références DOM ───────────────────────────────────────────────────────────
-let _elSpeedValue;
-let _elSpeedUnit;
-let _elGpsIcon;
-let _elGpsLabel;
-let _elGpsStatus;
-let _elRoadTypeBtns;
-let _elSafetyIndicator;
-let _elLegalBar;
-let _elLegalLimitText;
-let _elCountryFlag;
-let _initialized = false;
+    // Hystérésis barre légale
+    this.pendingState = null;
+    this.pendingSince = 0;
+    this.legalState = 'ok';
 
-/**
- * Initialise l'écran de conduite.
- * Doit être appelé une seule fois depuis app.js.
- */
-export function initDriveScreen() {
-  if (_initialized) return;
-  _initialized = true;
+    this.roadBtns.forEach(b => b.addEventListener('click', () => this.setRoad(b.dataset.road)));
+  }
 
-  // Récupération des éléments DOM
-  _elSpeedValue       = document.getElementById('speed-value');
-  _elSpeedUnit        = document.getElementById('speed-unit');
-  _elGpsIcon          = document.getElementById('gps-icon');
-  _elGpsLabel         = document.getElementById('gps-label');
-  _elGpsStatus        = document.querySelector('.gps-status');
-  _elRoadTypeBtns     = document.querySelectorAll('.road-type-btn');
-  _elSafetyIndicator  = document.getElementById('safety-margin-indicator');
-  _elLegalBar         = document.getElementById('legal-bar');
-  _elLegalLimitText   = document.getElementById('legal-limit-text');
-  _elCountryFlag      = document.getElementById('country-flag');
+  async loadSettings() {
+    const activeId = await DB.getSetting('activeProfileId', 'standard');
+    this.profile = await DB.getProfile(activeId) || await DB.getProfile('standard');
+    this.country = await DB.getSetting('activeCountry', 'FR');
+    this.overrides = await DB.getSetting('countryOverrides', {});
+    this.margin = await DB.getSetting('safetyMargin', 0);
+    this.unit = await DB.getSetting('unit', 'kmh');
+    this.roadType = await DB.getSetting('roadType', 'auto');
+    this._refreshStatic();
+  }
 
-  // Sélecteur de type de route
-  _elRoadTypeBtns.forEach((btn) => {
-    btn.addEventListener('click', _handleRoadTypeClick);
-  });
+  _refreshStatic() {
+    this.nameEl.textContent = this.profile?.name || 'Standard';
+    const c = COUNTRIES_2026[this.country];
+    this.flagEl.textContent = c?.flag || '🏳️';
+    this.unitEl.textContent = this.unit === 'mph' ? 'mph' : 'km/h';
+    this.roadBtns.forEach(b => b.classList.toggle('active', b.dataset.road === this.roadType));
+    if (this.margin > 0) {
+      this.safetyEl.textContent = `− ${this.margin} km/h`;
+      this.safetyEl.classList.remove('hidden');
+    } else {
+      this.safetyEl.classList.add('hidden');
+    }
+    this._updateDisplay();
+  }
 
-  // Démarrer le GPS
-  startGPS(_handleGPSUpdate, _handleGPSError);
+  setRoad(r) {
+    this.roadType = r;
+    DB.setSetting('roadType', r);
+    this.roadBtns.forEach(b => b.classList.toggle('active', b.dataset.road === r));
+    this._updateDisplay();
+  }
 
-  // Activer le Wake Lock
-  requestWakeLock();
+  onGpsUpdate(data) {
+    if (data.statusChange) {
+      this.gpsInd.classList.remove('ok', 'weak', 'lost');
+      this.gpsInd.classList.add(data.statusChange);
+      return;
+    }
+    this.currentSpeedKmh = data.speedKmh || 0;
+    this._updateDisplay();
+  }
 
-  console.log('[UI-Drive] Écran de conduite initialisé.');
-}
+  _updateDisplay() {
+    const coef = this.profile?.coefficient ?? 1;
+    let corrected = this.currentSpeedKmh * coef;
+    let displayed = Math.max(0, corrected - this.margin);
+    let shown = displayed;
+    if (this.unit === 'mph') shown = displayed * 0.621371;
+    this.speedEl.textContent = Math.round(shown);
 
-/**
- * Met à jour le badge de profil dans le bandeau.
- * Appelé depuis app.js quand le profil actif change.
- * @param {string} name — nom du véhicule
- */
-export function updateProfileBadge(name) {
-  const el = document.getElementById('profile-badge-name');
-  if (el) el.textContent = name;
-}
+    // Limite courante
+    const limits = getLimitsFor(this.country, this.overrides);
+    if (!limits) return;
+    const road = this.roadType === 'auto' ? roadFromSpeed(displayed) : this.roadType;
+    const limit = limits[road];
+    if (limit == null) {
+      this.limitEl.textContent = '∞';
+      this.cursorEl.style.left = '30%';
+      return;
+    }
+    let limShown = this.unit === 'mph' ? Math.round(limit * 0.621371) : limit;
+    this.limitEl.textContent = limShown;
 
-/**
- * Met à jour la vitesse affichée.
- * À l'étape 1 : vitesse brute GPS.
- * Aux étapes suivantes : vitesse corrigée par coefficient + marge.
- * @param {number} speedKmh
- */
-export function setDisplaySpeed(speedKmh) {
-  state.currentSpeed = speedKmh;
-  _renderSpeed();
-}
+    // Position curseur (0..150% de la limite mappé sur 0..100%)
+    const ratio = Math.min(1.5, displayed / limit) / 1.5;
+    this.cursorEl.style.left = `${ratio * 100}%`;
 
-// ─── Handlers GPS ─────────────────────────────────────────────────────────────
+    this._updateLegalState(displayed, limit);
+  }
 
-function _handleGPSUpdate(speedKmh, signalState) {
-  state.currentSpeed = speedKmh;
-  state.signalState  = signalState;
+  _updateLegalState(speed, limit) {
+    const delta = speed - limit;
+    let theoretical = 'ok';
+    if (delta > 5) theoretical = 'over';
+    else if (delta > -5) theoretical = 'near';
 
-  _renderSpeed();
-  _renderGPSStatus(signalState);
-}
-
-function _handleGPSError(error) {
-  state.signalState = 'lost';
-  _renderGPSStatus('lost');
-
-  const messages = {
-    1: 'Autorisation GPS refusée. Vérifiez les permissions.',
-    2: 'Signal GPS indisponible.',
-    3: 'Délai GPS dépassé.',
-    0: 'GPS non disponible sur cet appareil.',
-  };
-  console.warn('[UI-Drive] Erreur GPS :', messages[error.code] || error.message);
-}
-
-// ─── Rendu ────────────────────────────────────────────────────────────────────
-
-function _renderSpeed() {
-  if (!_elSpeedValue) return;
-
-  const speed = Math.max(0, Math.round(state.currentSpeed));
-  _elSpeedValue.textContent = speed > 0 ? speed : '--';
-  _elSpeedValue.setAttribute('aria-label', `${speed} kilomètres par heure`);
-}
-
-function _renderGPSStatus(signalState) {
-  if (!_elGpsStatus) return;
-
-  // Retirer toutes les classes d'état
-  _elGpsStatus.classList.remove(
-    'gps-status--good',
-    'gps-status--weak',
-    'gps-status--lost',
-    'gps-status--unknown'
-  );
-
-  const config = {
-    good:    { class: 'gps-status--good',    label: 'GPS OK',     title: 'Signal GPS bon' },
-    weak:    { class: 'gps-status--weak',    label: 'GPS faible', title: 'Signal GPS faible' },
-    lost:    { class: 'gps-status--lost',    label: 'GPS perdu',  title: 'Signal GPS perdu' },
-    unknown: { class: 'gps-status--unknown', label: 'GPS',        title: 'Signal GPS inconnu' },
-  };
-
-  const cfg = config[signalState] ?? config.unknown;
-  _elGpsStatus.classList.add(cfg.class);
-  _elGpsLabel.textContent = cfg.label;
-  _elGpsStatus.setAttribute('aria-label', cfg.title);
-}
-
-// ─── Sélecteur de type de route ───────────────────────────────────────────────
-
-function _handleRoadTypeClick(event) {
-  const btn      = event.currentTarget;
-  const roadType = btn.dataset.road;
-
-  state.roadType = roadType;
-
-  // Mise à jour de l'état actif des boutons
-  _elRoadTypeBtns.forEach((b) => {
-    const isActive = b.dataset.road === roadType;
-    b.classList.toggle('active', isActive);
-    b.setAttribute('aria-pressed', String(isActive));
-  });
-
-  console.log('[UI-Drive] Type de route sélectionné :', roadType);
-  // Étape 4 : this will trigger limit recalculation
-}
-
-/**
- * Retourne le type de route actif.
- * @returns {string}
- */
-export function getActiveRoadType() {
-  return state.roadType;
-}
-
-/**
- * Définit le type de route depuis l'extérieur (ex: mode auto).
- * @param {string} roadType
- */
-export function setRoadType(roadType) {
-  _handleRoadTypeClick({ currentTarget: document.querySelector(`[data-road="${roadType}"]`) });
+    const now = Date.now();
+    if (theoretical !== this.legalState) {
+      if (this.pendingState !== theoretical) {
+        this.pendingState = theoretical;
+        this.pendingSince = now;
+      } else if (now - this.pendingSince > 3000 && Math.abs(delta) > 7) {
+        this.legalState = theoretical;
+      }
+    } else {
+      this.pendingState = null;
+    }
+  }
 }
