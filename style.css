@@ -1,4 +1,7 @@
 /* ═══════════════════════════════════════════
+   Version 1.1
+═══════════════════════════════════════════ */
+/* ═══════════════════════════════════════════
    RESET & BASE
 ═══════════════════════════════════════════ */
 *, *::before, *::after {
@@ -363,7 +366,7 @@ body {
 .speed-value {
   font-family: var(--font-speed);
   font-weight: var(--speed-weight);
-  font-size: clamp(80px, 22vw, 180px);
+  font-size: clamp(140px, 38vw, 315px); /* +75% environ, base : 80px, 22vw, 180px*/
   line-height: 0.9;
   color: var(--accent);
   letter-spacing: -0.02em;
@@ -372,7 +375,7 @@ body {
 }
 
 @media (orientation: landscape) and (max-height: 600px) {
-  .speed-value { font-size: clamp(60px, 18vh, 120px); }
+  .speed-value { font-size: clamp(105px, 32vh, 210px); } /* +75% environ, base : 60px, 18vw, 120px*/
 }
 
 .speed-value.over-limit {
@@ -388,7 +391,7 @@ body {
 
 .speed-unit {
   font-family: var(--font-speed);
-  font-size: clamp(16px, 4vw, 26px);
+  font-size: clamp(20px, 5vw, 33px);
   color: var(--text2);
   letter-spacing: 0.2em;
   font-weight: 600;
@@ -730,3 +733,21 @@ body {
 .settings-inner::-webkit-scrollbar       { width: 4px; }
 .settings-inner::-webkit-scrollbar-track { background: transparent; }
 .settings-inner::-webkit-scrollbar-thumb { background: var(--panel-border); border-radius: 2px; }
+
+/* ── Bouton mode déplacement ── */
+.mode-btn {
+  background: transparent;
+  border: 2px solid var(--text2);
+  border-radius: 50%;
+  width: 2.6rem;
+  height: 2.6rem;
+  font-size: 1.3rem;
+  cursor: pointer;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.15s ease, border-color 0.2s;
+}
+.mode-btn:active        { transform: scale(0.88); }
+.mode-btn[data-mode="soft"] { border-color: var(--accent); }
