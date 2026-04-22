@@ -1,5 +1,0 @@
-Application d'affichage de la vitesse GPS actuelle d'un véhicule, ainsi que l'affichage de la vitesse autorisé sur la portion de route de l'utilisateur.
-Donc le but de l'application est d'afficher en gros la vitesse actuelle de l'utilisateur, et d'afficher en dessous la limitation de la route sur laquel il se trouve actuellement.
-Via un service de géolocalisation routier open source et gratuit d'utilisation.
-Pas besoin d'avoir l'affichage de la carte ni rien d'autre que la vitesse.
-App responsivle, le but est de l'utiliser sur un smartphone et eventuellement en ecran splité donc app responsive obligatoire.
