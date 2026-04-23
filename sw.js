@@ -1,4 +1,4 @@
-const CACHE_NAME = 'affivi-v1.1';
+const CACHE_NAME = 'affivi-v1.2';
 const ASSETS = [
   './index.html',
   './style.css',

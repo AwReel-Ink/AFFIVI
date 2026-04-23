@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════
-   Version 1.1
+   Version 1.2
 ═══════════════════════════════════════════ */
 /* ═══════════════════════════════════════════
    RESET & BASE
@@ -751,3 +751,11 @@ body {
 }
 .mode-btn:active        { transform: scale(0.88); }
 .mode-btn[data-mode="soft"] { border-color: var(--accent); }
+
+.mode-label {
+  font-size: 0.65rem;
+  opacity: 0.7;
+  text-align: center;
+  margin-top: 2px;
+  letter-spacing: 0.03em;
+}
