@@ -1,11 +1,12 @@
 /* ═══════════════════════════════════════════
    AFFIVI — AFFIchage VItesse
-   Version 1.2
-   app.js
+   Version 2.0 — app.js (interface)
    © 2026 LEROY Aurélien — Tous droits réservés
 ═══════════════════════════════════════════ */
 
 'use strict';
+
+const E = window.AffiviEngine;
 
 // ── PWA Service Worker ───────────────────────
 if ('serviceWorker' in navigator) {
@@ -14,569 +15,313 @@ if ('serviceWorker' in navigator) {
   });
 }
 
+// ── Stockage sûr (navigation privée, etc.) ───
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : v; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+};
+
 // ── DOM ──────────────────────────────────────
+const $ = id => document.getElementById(id);
 const DOM = {
-  body:          document.getElementById('app-body'),
-  metaTheme:     document.getElementById('meta-theme'),
-  speedValue:    document.getElementById('speed-value'),
-  startBtn:      document.getElementById('start-btn'),
-  limitNumber:   document.getElementById('limit-number'),
-  limitRing:     document.getElementById('limit-ring'),
-  limitLabel:    document.getElementById('limit-label'),
-  roadType:      document.getElementById('road-type'),
-  signalBars:    document.getElementById('signal-bars'),
-  signalLabel:   document.getElementById('signal-label'),
-  lagBlock:      document.getElementById('lag-block'),
-  lagValue:      document.getElementById('lag-value'),
-  lagIcon:       document.getElementById('lag-icon'),
-  settingsBtn:   document.getElementById('settings-btn'),
-  settingsPanel: document.getElementById('settings-panel'),
-  closeBtn:      document.getElementById('close-btn'),
-  overlay:       document.getElementById('overlay'),
-  themeGrid:     document.getElementById('theme-grid'),
-  lagOptions:    document.getElementById('lag-options'),
-  modeBtn:       document.getElementById('mode-btn'),
-  modeLabel:     document.getElementById('mode-label'), // ← nouveau
+  metaTheme:     $('meta-theme'),
+  speedValue:    $('speed-value'),
+  startBtn:      $('start-btn'),
+  limitNumber:   $('limit-number'),
+  limitRing:     $('limit-ring'),
+  limitLabel:    $('limit-label'),
+  roadType:      $('road-type'),
+  statusLine:    $('status-line'),
+  signalBars:    $('signal-bars'),
+  signalLabel:   $('signal-label'),
+  lagBlock:      $('lag-block'),
+  lagValue:      $('lag-value'),
+  lagIcon:       $('lag-icon'),
+  settingsBtn:   $('settings-btn'),
+  settingsPanel: $('settings-panel'),
+  closeBtn:      $('close-btn'),
+  overlay:       $('overlay'),
+  modeBtn:       $('mode-btn'),
+  modeLabel:     $('mode-label'),
+  smoothHint:    $('smooth-hint'),
 };
 
 // ── État ─────────────────────────────────────
 const STATE = {
-  gpsActive:      false,
-  watchId:        null,
-  currentSpeed:   0,
-  speedLimit:     null,
-  currentTheme:   'dark',
-  lagThreshold:   3,
-  lastUpdateTime: null,
-  lagInterval:    null,
-  wakeLock:       null,
-  travelMode:     'car',
+  gpsActive:    false,
+  watchId:      null,
+  lastFixTime:  null,   // heure de la dernière position reçue
+  lastPos:      null,   // dernière position exploitable
+  speed:        null,   // vitesse affichée (km/h) ou null
+  limit:        null,   // limitation affichée (km/h) ou null
+  lagThreshold: parseInt(store.get('affivi-lag', '3'), 10) || 3,
+  travelMode:   store.get('affivi-mode', 'car') === 'soft' ? 'soft' : 'car',
+  smoothing:    store.get('affivi-smooth', 'balanced'),
+  wakeLock:     null,
+  gpsError:     null,
+  stale:        false,  // vitesse plus à jour (signal perdu)
 };
 
-// ══════════════════════════════════════════════
-//  FILTRE DE KALMAN SIMPLIFIÉ
-//  Lisse la vitesse GPS brute pour éviter les
-//  sauts / instabilités liées au signal.
-// ══════════════════════════════════════════════
-const KALMAN = {
-  // Variance du bruit de mesure GPS (plus élevé = on fait moins confiance au GPS)
-  R: 4,
-  // Variance du bruit de processus (plus élevé = on suit plus vite les vraies variations)
-  Q: 1,
-  // État interne
-  _estimate:  0,   // vitesse estimée
-  _errorCov:  1,   // covariance d'erreur
-  _init:      false,
+const speedFilter = new E.SpeedFilter(STATE.smoothing);
+const headingTrk  = new E.HeadingTracker();
+const tiles       = new E.TileManager();
+const matcher     = new E.RoadMatcher();
 
-  reset() {
-    this._estimate = 0;
-    this._errorCov = 1;
-    this._init     = false;
-  },
-
-  filter(measurement) {
-    // Première mesure : initialisation directe
-    if (!this._init) {
-      this._estimate = measurement;
-      this._init     = true;
-      return measurement;
-    }
-
-    // ── Prédiction ──────────────────────────
-    // On suppose vitesse quasi-constante entre 2 ticks
-    const predictedEstimate = this._estimate;
-    const predictedErrorCov = this._errorCov + this.Q;
-
-    // ── Mise à jour (correction) ─────────────
-    // Gain de Kalman : quel poids donner à la mesure vs la prédiction
-    const K = predictedErrorCov / (predictedErrorCov + this.R);
-
-    this._estimate  = predictedEstimate + K * (measurement - predictedEstimate);
-    this._errorCov  = (1 - K) * predictedErrorCov;
-
-    return Math.max(0, this._estimate);
-  },
+const SMOOTH_HINTS = {
+  reactive: 'Valeur GPS brute, aucun retard. Seules les valeurs impossibles sont filtrées.',
+  balanced: 'Recommandé. Aucun retard quand le signal est bon, léger lissage quand il est moyen.',
+  stable:   'Chiffres plus calmes, mais environ 1 à 2 secondes de retard sur les changements.',
 };
 
-// ── Limites légales FR — Mode Voiture ─────────
-const DEFAULT_LIMITS_CAR = {
-  motorway:       130,
-  motorway_link:  110,
-  trunk:          110,
-  trunk_link:     110,
-  primary:        80,
-  primary_link:   80,
-  secondary:      80,
-  secondary_link: 80,
-  tertiary:       80,
-  tertiary_link:  80,
-  unclassified:   80,
-  residential:    30,
-  living_street:  20,
-  service:        20,
-};
-
-// ── Limites légales FR — Mode Doux ────────────
-const DEFAULT_LIMITS_SOFT = {
-  cycleway:       30,
-  path:           25,
-  pedestrian:     20,
-  footway:        15,
-  living_street:  20,
-  residential:    30,
-  service:        20,
-  tertiary:       30,
-  tertiary_link:  30,
-  unclassified:   30,
-  secondary:      30,
-  secondary_link: 30,
-};
-
-const ROAD_LABELS = {
-  motorway:       'Autoroute',
-  motorway_link:  'Bretelle autoroute',
-  trunk:          'Route express',
-  trunk_link:     'Bretelle voie express',
-  primary:        'Route nationale',
-  primary_link:   'Liaison nationale',
-  secondary:      'Route départementale',
-  secondary_link: 'Liaison départementale',
-  tertiary:       'Route locale',
-  tertiary_link:  'Liaison locale',
-  unclassified:   'Route non classée',
-  residential:    'Rue résidentielle',
-  living_street:  'Zone de rencontre',
-  service:        'Voie de service',
-  cycleway:       'Piste cyclable',
-  path:           'Chemin',
-  pedestrian:     'Zone piétonne',
-  footway:        'Trottoir / Chemin piéton',
+const THEME_COLORS = {
+  dark: '#0a0a0f', light: '#f0f2f5', space: '#020210',
+  ocean: '#021520', nature: '#0a1a0a', zen: '#1a1510',
 };
 
 // ══════════════════════════════════════════════
 //  INIT
 // ══════════════════════════════════════════════
 function init() {
-  const savedTheme = localStorage.getItem('affivi-theme') || 'dark';
-  document.body.classList.add(`theme-${savedTheme}`);
-  applyTheme(savedTheme);
-
-  const savedLag = localStorage.getItem('affivi-lag');
-  if (savedLag) STATE.lagThreshold = parseInt(savedLag);
-
-  const savedMode = localStorage.getItem('affivi-mode') || 'car';
-  setTravelMode(savedMode, false);
-
-  console.log('themeGrid:', DOM.themeGrid);
-  console.log('themeGrid HTML:', document.getElementById('theme-grid'));
-
-  buildThemeGrid();
-  buildLagOptions();
+  applyTheme(store.get('affivi-theme', 'dark'));
+  setTravelMode(STATE.travelMode, false);
+  bindOptions();
 
   DOM.startBtn.addEventListener('click', toggleGPS);
   DOM.settingsBtn.addEventListener('click', openSettings);
   DOM.closeBtn.addEventListener('click', closeSettings);
   DOM.overlay.addEventListener('click', closeSettings);
   DOM.modeBtn.addEventListener('click', toggleTravelMode);
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSettings(); });
 
-  startLagTimer();
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && STATE.gpsActive) requestWakeLock();
+  });
+
+  setInterval(updateLagIndicator, 250);
+  updateLagIndicator();
+}
+
+// ══════════════════════════════════════════════
+//  THÈMES & OPTIONS
+// ══════════════════════════════════════════════
+function applyTheme(theme) {
+  if (!THEME_COLORS[theme]) theme = 'dark';
+  [...document.body.classList].forEach(c => { if (c.startsWith('theme-')) document.body.classList.remove(c); });
+  document.body.classList.add(`theme-${theme}`);
+  store.set('affivi-theme', theme);
+  if (DOM.metaTheme) DOM.metaTheme.content = THEME_COLORS[theme];
+  document.querySelectorAll('.theme-btn').forEach(b => b.classList.toggle('active', b.dataset.theme === theme));
+}
+
+function bindOptions() {
+  document.querySelectorAll('.theme-btn').forEach(btn =>
+    btn.addEventListener('click', () => applyTheme(btn.dataset.theme)));
+
+  const lagBtns = document.querySelectorAll('[data-lag]');
+  lagBtns.forEach(btn => {
+    const v = parseInt(btn.dataset.lag, 10);
+    btn.classList.toggle('active', v === STATE.lagThreshold);
+    btn.addEventListener('click', () => {
+      STATE.lagThreshold = v;
+      store.set('affivi-lag', String(v));
+      lagBtns.forEach(b => b.classList.toggle('active', b === btn));
+    });
+  });
+
+  const smBtns = document.querySelectorAll('[data-smooth]');
+  const setSmooth = mode => {
+    if (!SMOOTH_HINTS[mode]) mode = 'balanced';
+    STATE.smoothing = mode;
+    speedFilter.setMode(mode);
+    store.set('affivi-smooth', mode);
+    smBtns.forEach(b => b.classList.toggle('active', b.dataset.smooth === mode));
+    DOM.smoothHint.textContent = SMOOTH_HINTS[mode];
+  };
+  smBtns.forEach(btn => btn.addEventListener('click', () => setSmooth(btn.dataset.smooth)));
+  setSmooth(STATE.smoothing);
+}
+
+function openSettings() {
+  DOM.settingsPanel.classList.add('open');
+  DOM.settingsPanel.setAttribute('aria-hidden', 'false');
+  DOM.overlay.classList.add('visible');
+}
+
+function closeSettings() {
+  DOM.settingsPanel.classList.remove('open');
+  DOM.settingsPanel.setAttribute('aria-hidden', 'true');
+  DOM.overlay.classList.remove('visible');
 }
 
 // ══════════════════════════════════════════════
 //  MODE DÉPLACEMENT
 // ══════════════════════════════════════════════
 function toggleTravelMode() {
-  const next = STATE.travelMode === 'car' ? 'soft' : 'car';
-  setTravelMode(next, true);
-
-  if (STATE.gpsActive && _fetchLat !== null) {
-    _lastFetchTime = 0;
-    fetchSpeedLimit(_fetchLat, _fetchLon);
-  }
+  setTravelMode(STATE.travelMode === 'car' ? 'soft' : 'car', true);
+  matcher.reset();
+  renderLimit({ kmh: null, source: 'none' }, null);
+  if (STATE.gpsActive && STATE.lastPos) maybeLoadTile(STATE.lastPos, true);
 }
 
 function setTravelMode(mode, save = true) {
   STATE.travelMode = mode;
-  if (save) localStorage.setItem('affivi-mode', mode);
-
-  if (mode === 'car') {
-    DOM.modeBtn.textContent  = '🚗';
-    DOM.modeBtn.title        = 'Mode voiture actif';
-    DOM.modeBtn.dataset.mode = 'car';
-    if (DOM.modeLabel) DOM.modeLabel.textContent = 'Voiture';
-  } else {
-    DOM.modeBtn.textContent  = '🚲';
-    DOM.modeBtn.title        = 'Mode doux actif';
-    DOM.modeBtn.dataset.mode = 'soft';
-    if (DOM.modeLabel) DOM.modeLabel.textContent = 'Vélo';
-  }
-}
-
-// ══════════════════════════════════════════════
-//  THÈMES
-// ══════════════════════════════════════════════
-const THEMES = ['dark','light','night','ocean','forest','sunset'];
-
-function buildThemeGrid() {
-  document.querySelectorAll('.theme-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const theme = btn.dataset.theme;
-      applyTheme(theme);
-      localStorage.setItem('affivi-theme', theme);
-      document.querySelectorAll('.theme-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-    });
-  });
-
-  // Marquer le thème actif au chargement
-  const saved = localStorage.getItem('affivi-theme') || 'dark';
-  document.querySelectorAll('.theme-btn').forEach(b => {
-    b.classList.toggle('active', b.dataset.theme === saved);
-  });
-}
-
-function applyTheme(theme) {
-  // Retire toutes les classes de thème existantes
-  document.body.classList.forEach(cls => {
-    if (cls.startsWith('theme-')) document.body.classList.remove(cls);
-  });
-  document.body.classList.add(`theme-${theme}`);
-  
-  STATE.currentTheme = theme;
-  localStorage.setItem('affivi-theme', theme);
-  
-  const colors = {
-    dark:   '#0a0a0f',
-    light:  '#f0f2f5',
-    space:  '#020210',
-    ocean:  '#021520',
-    nature: '#0a1a0a',
-    zen:    '#1a1510',
-  };
-  if (DOM.metaTheme) DOM.metaTheme.content = colors[theme] || '#0a0a0f';
-}
-
-// ══════════════════════════════════════════════
-//  LAG OPTIONS
-// ══════════════════════════════════════════════
-function buildLagOptions() {
-  if (!DOM.lagOptions) return;
-  const thresholds = [2, 3, 5, 10];
-  DOM.lagOptions.innerHTML = '';
-  thresholds.forEach(v => {
-    const btn = document.createElement('button');
-    btn.className   = 'lag-opt-btn' + (v === STATE.lagThreshold ? ' active' : '');
-    btn.textContent = v + 's';
-    btn.addEventListener('click', () => {
-      STATE.lagThreshold = v;
-      localStorage.setItem('affivi-lag', v);
-      document.querySelectorAll('.lag-opt-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-    });
-    DOM.lagOptions.appendChild(btn);
-  });
-}
-
-// ══════════════════════════════════════════════
-//  SETTINGS PANEL
-// ══════════════════════════════════════════════
-function openSettings() {
-  DOM.settingsPanel.classList.add('open');
-  DOM.overlay.classList.add('visible');
-}
-
-function closeSettings() {
-  DOM.settingsPanel.classList.remove('open');
-  DOM.overlay.classList.remove('visible');
+  if (save) store.set('affivi-mode', mode);
+  const car = mode === 'car';
+  DOM.modeBtn.textContent  = car ? '🚗' : '🚲';
+  DOM.modeBtn.title        = car ? 'Mode voiture actif' : 'Mode vélo actif';
+  DOM.modeBtn.dataset.mode = mode;
+  DOM.modeLabel.textContent = car ? 'Voiture' : 'Vélo';
 }
 
 // ══════════════════════════════════════════════
 //  GPS
 // ══════════════════════════════════════════════
-function toggleGPS() {
-  STATE.gpsActive ? stopGPS() : startGPS();
-}
+function toggleGPS() { STATE.gpsActive ? stopGPS() : startGPS(); }
 
 function startGPS() {
-  if (!navigator.geolocation) {
-    DOM.roadType.textContent = 'GPS non supporté';
+  if (!('geolocation' in navigator)) {
+    setStatus('GPS non disponible sur cet appareil', 'error');
     return;
   }
-  STATE.gpsActive = true;
+  STATE.gpsActive   = true;
+  STATE.lastFixTime = null;
+  STATE.gpsError    = null;
+  speedFilter.reset();
+  headingTrk.reset();
+  matcher.reset();
   DOM.startBtn.textContent = '⏹ Arrêter';
   DOM.startBtn.classList.add('active');
-  KALMAN.reset(); // ← reset filtre à chaque démarrage
+  DOM.speedValue.textContent = '--';
+  DOM.speedValue.classList.add('waiting');
+  setStatus('Recherche du signal GPS…');
   requestWakeLock();
 
   STATE.watchId = navigator.geolocation.watchPosition(
     onGPSUpdate,
     onGPSError,
-    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
   );
 }
 
 function stopGPS() {
-  if (STATE.watchId !== null) {
-    navigator.geolocation.clearWatch(STATE.watchId);
-    STATE.watchId = null;
-  }
-  STATE.gpsActive      = false;
-  STATE.lastUpdateTime = null;
-  KALMAN.reset();
-  DOM.startBtn.textContent = '▶ Démarrer';
+  if (STATE.watchId !== null) navigator.geolocation.clearWatch(STATE.watchId);
+  STATE.watchId     = null;
+  STATE.gpsActive   = false;
+  STATE.lastFixTime = null;
+  STATE.speed       = null;
+  DOM.startBtn.textContent = '▶ Activer le GPS';
   DOM.startBtn.classList.remove('active');
-  DOM.speedValue.textContent = '0';
+  DOM.speedValue.textContent = '--';
+  DOM.speedValue.className = 'speed-value';
   setSignal(-1);
-  updateLimitDisplay(null, '');
-  if (STATE.wakeLock) { STATE.wakeLock.release().catch(() => {}); }
+  renderLimit({ kmh: null, source: 'none' }, null);
+  DOM.limitLabel.textContent = 'Limitation';
+  setStatus('');
+  if (STATE.wakeLock) { STATE.wakeLock.release().catch(() => {}); STATE.wakeLock = null; }
 }
 
 function onGPSUpdate(pos) {
-  const { latitude, longitude, speed, accuracy } = pos.coords;
-  STATE.lastUpdateTime = Date.now();
+  if (!STATE.gpsActive) return;
+  const c   = pos.coords;
+  const now = Date.now();
+  STATE.lastFixTime = now;
+  STATE.gpsError    = null;
+  STATE.stale       = false;
 
-  // Vitesse brute GPS en km/h
-  const rawKmh = speed !== null ? Math.max(0, speed * 3.6) : 0;
+  const fix = {
+    lat: c.latitude, lon: c.longitude, accuracy: c.accuracy,
+    speed: c.speed, heading: c.heading, t: now,
+  };
 
-  // ── Filtre de Kalman ──────────────────────
-  // On ajuste R dynamiquement selon la précision GPS :
-  // mauvaise précision = on fait moins confiance à la mesure
-  KALMAN.R = accuracy != null ? Math.max(2, Math.min(accuracy / 3, 20)) : 8;
-  const smoothKmh = KALMAN.filter(rawKmh);
-  const kmh       = Math.round(smoothKmh);
+  const kmh = speedFilter.update(fix);
+  STATE.speed = kmh;
+  const heading = headingTrk.update(fix, kmh || 0);
 
-  STATE.currentSpeed = kmh;
-  updateSpeedDisplay(kmh);
-  updateSignal(accuracy);
+  DOM.speedValue.textContent = kmh === null ? '--' : kmh;
+  DOM.speedValue.classList.toggle('waiting', kmh === null);
+  updateSignal(c.accuracy);
 
-  if (shouldFetch(latitude, longitude)) {
-    fetchSpeedLimit(latitude, longitude);
+  // Positions trop imprécises (réseau / wifi) : pas d'analyse de route
+  if (!(c.accuracy <= 60)) {
+    if (!tiles.tile) setStatus('Précision GPS insuffisante…', 'warn');
+    checkOverLimit();
+    return;
   }
+
+  const p = { lat: fix.lat, lon: fix.lon, accuracy: c.accuracy, heading, speedKmh: kmh || 0, t: now };
+  STATE.lastPos = p;
+  maybeLoadTile(p, false);
+  refreshLimit(p);
 }
 
 function onGPSError(err) {
-  STATE.lastUpdateTime = null;
-  DOM.speedValue.textContent = '--';
-  setSignal(-1);
-  const msgs = {
-    1: 'Permission GPS refusée',
-    2: 'Signal GPS indisponible',
-    3: 'Délai GPS dépassé',
-  };
-  DOM.roadType.textContent = msgs[err.code] || 'Erreur GPS';
-}
-
-// ── Fetch throttle ────────────────────────────
-let _fetchLat      = null;
-let _fetchLon      = null;
-let _lastFetchTime = 0;
-
-const FETCH_DISTANCE = 25;
-const FETCH_INTERVAL = 5000;
-
-function shouldFetch(lat, lon) {
-  if (_fetchLat === null) return true;
-  const dist    = haversine(lat, lon, _fetchLat, _fetchLon);
-  const elapsed = Date.now() - _lastFetchTime;
-  return dist > FETCH_DISTANCE || elapsed > FETCH_INTERVAL;
-}
-
-function haversine(lat1, lon1, lat2, lon2) {
-  const R = 6371000, rad = Math.PI / 180;
-  const dLat = (lat2 - lat1) * rad;
-  const dLon = (lon2 - lon1) * rad;
-  const a = Math.sin(dLat/2)**2 +
-    Math.cos(lat1*rad) * Math.cos(lat2*rad) * Math.sin(dLon/2)**2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-}
-
-// ══════════════════════════════════════════════
-//  OVERPASS API
-// ══════════════════════════════════════════════
-let _abortCtrl = null;
-
-async function fetchSpeedLimit(lat, lon) {
-  _fetchLat      = lat;
-  _fetchLon      = lon;
-  _lastFetchTime = Date.now();
-
-  if (_abortCtrl) _abortCtrl.abort();
-  _abortCtrl = new AbortController();
-
-  const exclusions = STATE.travelMode === 'car'
-    ? '[highway!~"footway|cycleway|path|steps|pedestrian"]'
-    : '[highway!~"motorway|motorway_link|trunk|trunk_link"]';
-
-  // Rayon élargi à 20m + géométrie complète pour calcul de distance
-  const query = `[out:json][timeout:5];
-way(around:20,${lat},${lon})[highway]${exclusions};
-out tags geom;`;
-
-  try {
-    const res  = await fetch(
-      `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`,
-      { signal: _abortCtrl.signal }
-    );
-    const data = await res.json();
-    if (!data.elements?.length) { updateLimitDisplay(null, ''); return; }
-
-    const way = pickBestWay(data.elements, lat, lon);
-    if (!way)  { updateLimitDisplay(null, ''); return; }
-
-    const tags    = way.tags || {};
-    const highway = tags.highway || '';
-    let   limit   = parseMaxspeed(tags.maxspeed);
-
-    if (limit === null) {
-      const limits = STATE.travelMode === 'car'
-        ? DEFAULT_LIMITS_CAR
-        : DEFAULT_LIMITS_SOFT;
-      limit = limits[highway] ?? null;
-    }
-
-    const label = ROAD_LABELS[highway] || highway || '';
-    const name  = tags.name || tags.ref || '';
-    const info  = [tags.ref, name !== tags.ref ? name : '']
-                    .filter(Boolean).join(' — ') || label;
-
-    updateLimitDisplay(limit, info);
-  } catch (e) {
-    if (e.name !== 'AbortError') { /* silencieux */ }
+  if (err.code === 1) {
+    stopGPS();
+    setStatus('Permission de localisation refusée', 'error');
+    return;
   }
+  // Signal perdu / délai dépassé : on ne remet PAS le compteur à zéro,
+  // l'alerte de retard continue de monter.
+  STATE.gpsError = err.code;
 }
 
 // ══════════════════════════════════════════════
-//  SÉLECTION DU MEILLEUR SEGMENT
-//  Score combiné : rang hiérarchique + distance
-//  géométrique + cohérence avec vitesse actuelle
+//  ROUTES & LIMITATION
 // ══════════════════════════════════════════════
-function pickBestWay(elements, userLat, userLon) {
-  const orderCar  = ['motorway','trunk','primary','secondary',
-                     'tertiary','unclassified','residential','living_street','service'];
-  const orderSoft = ['cycleway','pedestrian','path','footway',
-                     'living_street','residential','service',
-                     'tertiary','unclassified'];
-
-  const order = STATE.travelMode === 'car' ? orderCar : orderSoft;
-  const roads = elements.filter(e => e.type === 'way' && e.tags?.highway);
-  if (!roads.length) return null;
-
-  // Vitesse actuelle pour pondérer la cohérence
-  const spd = STATE.currentSpeed;
-
-  const scored = roads.map(way => {
-    const hw   = (way.tags.highway || '').replace(/_link$/, '');
-    const rank = order.indexOf(hw);
-
-    // ── Distance géométrique au segment ─────
-    // On cherche le point le plus proche sur la polyligne du way
-    const dist = distanceToWay(way, userLat, userLon);
-
-    // ── Score de rang (0 = meilleur) ────────
-    const rankScore = rank === -1 ? 999 : rank;
-
-    // ── Cohérence vitesse / type de route ───
-    // Pénaliser si on va vite sur une route lente ou inversement
-    let coherencePenalty = 0;
-    const defaultLimits  = STATE.travelMode === 'car'
-      ? DEFAULT_LIMITS_CAR : DEFAULT_LIMITS_SOFT;
-    const expectedLimit  = defaultLimits[way.tags.highway] ?? 50;
-
-    if (spd > 0) {
-      // Ex : on roule à 90km/h et le segment est résidentiel (30) → pénalité forte
-      const ratio = Math.abs(spd - expectedLimit) / Math.max(expectedLimit, 1);
-      coherencePenalty = ratio * 2; // coefficient ajustable
-    }
-
-    // ── Bonus maxspeed explicite ─────────────
-    const hasLimit = way.tags.maxspeed ? -1 : 0; // bonus léger
-
-    // Score final : plus bas = meilleur
-    const score = rankScore * 1.5
-                + (dist / 5)          // distance en mètres, normalisée
-                + coherencePenalty
-                + hasLimit;
-
-    return { way, score };
+function maybeLoadTile(p, force) {
+  if (!force && !tiles.needsFetch(p.lat, p.lon, p.speedKmh, STATE.travelMode)) return;
+  if (tiles.loading) return;
+  if (!tiles.covers(p.lat, p.lon) || tiles.tile?.mode !== STATE.travelMode) {
+    setStatus('Chargement des routes…');
+  }
+  tiles.load(p.lat, p.lon, p.speedKmh, STATE.travelMode).then(ok => {
+    if (!STATE.gpsActive) return;
+    if (ok) setStatus('');
+    if (STATE.lastPos) refreshLimit(STATE.lastPos);
   });
-
-  scored.sort((a, b) => a.score - b.score);
-  return scored[0].way;
 }
 
-// Distance d'un point à un segment de polyligne (way avec géométrie)
-function distanceToWay(way, lat, lon) {
-  const geom = way.geometry;
-  if (!geom || geom.length < 2) {
-    // Pas de géométrie : distance au centroïde approchée
-    return 0;
+function refreshLimit(p) {
+  const tile = tiles.tile;
+  if (!tile || tile.mode !== STATE.travelMode || !tiles.covers(p.lat, p.lon)) {
+    if (tiles.state === 'error') {
+      setStatus(tile ? 'Hors zone chargée — nouvelle tentative…' : 'Données routières indisponibles — nouvelle tentative…', 'warn');
+      // au-delà de la zone : on n'affiche plus une limitation qui pourrait être fausse
+      if (tile && !tiles.covers(p.lat, p.lon)) renderLimit({ kmh: null, source: 'none' }, null);
+    }
+    checkOverLimit();
+    return;
   }
-
-  let minDist = Infinity;
-  for (let i = 0; i < geom.length - 1; i++) {
-    const d = distanceToSegment(
-      lat, lon,
-      geom[i].lat,   geom[i].lon,
-      geom[i+1].lat, geom[i+1].lon
-    );
-    if (d < minDist) minDist = d;
-  }
-  return minDist;
+  if (tiles.state === 'ok') setStatus('');
+  const match = matcher.update(tile, p, STATE.travelMode);
+  const urban = E.isUrban(tile, p, match?.way);
+  renderLimit(E.resolveLimit(match, { urban, mode: STATE.travelMode }), match);
 }
 
-// Distance d'un point à un segment [A,B] en mètres
-function distanceToSegment(pLat, pLon, aLat, aLon, bLat, bLon) {
-  // Projection sur le segment en coordonnées approchées (plan local)
-  const dx = bLon - aLon;
-  const dy = bLat - aLat;
-  const lenSq = dx*dx + dy*dy;
-
-  let t = 0;
-  if (lenSq > 0) {
-    t = ((pLon - aLon)*dx + (pLat - aLat)*dy) / lenSq;
-    t = Math.max(0, Math.min(1, t));
-  }
-
-  const closestLat = aLat + t * dy;
-  const closestLon = aLon + t * dx;
-  return haversine(pLat, pLon, closestLat, closestLon);
+function renderLimit(res, match) {
+  STATE.limit = res.kmh;
+  DOM.limitNumber.textContent = res.kmh !== null ? res.kmh : '--';
+  const est = res.source === 'estimate';
+  DOM.limitRing.classList.toggle('estimated', est);
+  DOM.limitLabel.classList.toggle('estimated', est);
+  DOM.limitLabel.textContent =
+    res.source === 'osm'      ? 'Limitation' :
+    res.source === 'estimate' ? 'Estimée'    :
+    match                     ? 'Non renseignée' : 'Inconnue';
+  DOM.roadType.textContent = E.roadInfo(match);
+  checkOverLimit();
 }
 
-function parseMaxspeed(raw) {
-  if (!raw) return null;
-  const map = {
-    'FR:motorway':      130,
-    'FR:rural':          80,
-    'FR:urban':          50,
-    'FR:living_street':  20,
-    'FR:walk':           20,
-    'walk':               7,
-  };
-  if (map[raw] !== undefined) return map[raw];
-  const n = parseInt(raw);
-  return (!isNaN(n) && n > 0) ? n : null;
-}
-
-// ══════════════════════════════════════════════
-//  AFFICHAGE VITESSE & LIMITE
-// ══════════════════════════════════════════════
-function updateSpeedDisplay(kmh) {
-  DOM.speedValue.textContent = kmh;
-  checkOverLimit(kmh, STATE.speedLimit);
-}
-
-function updateLimitDisplay(limit, info) {
-  STATE.speedLimit            = limit;
-  DOM.limitNumber.textContent = limit !== null ? limit : '--';
-  DOM.limitLabel.textContent  = limit !== null ? 'Limitation' : 'Inconnue';
-  DOM.roadType.textContent    = info || '';
-  checkOverLimit(STATE.currentSpeed, limit);
-}
-
-function checkOverLimit(speed, limit) {
-  const over = limit !== null && speed > limit;
+function checkOverLimit() {
+  // Pas d'alerte sur une vitesse périmée (signal perdu) : elle serait trompeuse
+  const over = !STATE.stale && STATE.limit !== null && STATE.speed !== null && STATE.speed > STATE.limit;
   DOM.speedValue.classList.toggle('over-limit', over);
   DOM.limitRing.classList.toggle('over-limit', over);
+}
+
+function setStatus(text, level) {
+  DOM.statusLine.textContent = text || '';
+  DOM.statusLine.className = 'status-line' + (level ? ' ' + level : '');
 }
 
 // ══════════════════════════════════════════════
@@ -584,59 +329,71 @@ function checkOverLimit(speed, limit) {
 // ══════════════════════════════════════════════
 function updateSignal(accuracy) {
   let level;
-  if (accuracy == null)     level = -1;
-  else if (accuracy <= 15)  level =  3;
-  else if (accuracy <= 40)  level =  2;
-  else if (accuracy <= 100) level =  1;
-  else                      level =  0;
+  if (accuracy == null || !isFinite(accuracy)) level = -1;
+  else if (accuracy <= 10)  level = 3;
+  else if (accuracy <= 25)  level = 2;
+  else if (accuracy <= 60)  level = 1;
+  else                      level = 0;
   setSignal(level);
 }
 
-function setSignal(level) {
+function setSignal(level, label) {
   DOM.signalBars.className    = 'signal-bars' + (level >= 0 ? ` sig-${level}` : '');
-  DOM.signalLabel.textContent = ['Faible','Moyen','Bon','Excellent'][level] ?? 'GPS';
+  DOM.signalLabel.textContent = label || (['Faible', 'Moyen', 'Bon', 'Excellent'][level] ?? 'GPS');
 }
 
 // ══════════════════════════════════════════════
-//  LAG TIMER
+//  INDICATEUR DE RETARD
 // ══════════════════════════════════════════════
-function startLagTimer() {
-  setInterval(() => {
-    if (!STATE.gpsActive || STATE.lastUpdateTime === null) {
-      DOM.lagValue.textContent = '--';
-      DOM.lagBlock.className   = 'lag-block';
-      return;
-    }
-    const elapsed = Math.floor((Date.now() - STATE.lastUpdateTime) / 1000);
-    DOM.lagValue.textContent = elapsed + 's';
-    const crit = STATE.lagThreshold * 1.67;
-    if (elapsed >= crit) {
-      DOM.lagBlock.className  = 'lag-block lag-crit';
-      DOM.lagIcon.textContent = '⚠️';
-    } else if (elapsed >= STATE.lagThreshold) {
-      DOM.lagBlock.className  = 'lag-block lag-warn';
-      DOM.lagIcon.textContent = '⚠️';
-    } else {
-      DOM.lagBlock.className  = 'lag-block';
-      DOM.lagIcon.textContent = '⏱';
-    }
-  }, 500);
+function updateLagIndicator() {
+  const sv = DOM.speedValue;
+  if (!STATE.gpsActive) {
+    DOM.lagValue.textContent = '--';
+    DOM.lagBlock.className   = 'lag-block';
+    DOM.lagIcon.textContent  = '⏱';
+    sv.classList.remove('aging', 'stale');
+    return;
+  }
+  if (STATE.lastFixTime === null) {
+    DOM.lagValue.textContent = '…';
+    DOM.lagBlock.className   = 'lag-block';
+    if (STATE.gpsError) setStatus('Signal GPS introuvable — allez à découvert', 'warn');
+    return;
+  }
+
+  const elapsed = (Date.now() - STATE.lastFixTime) / 1000;
+  // À l'arrêt, certains téléphones espacent les positions : alerte plus tolérante
+  const thr  = STATE.lagThreshold * (STATE.speed === 0 ? 3 : 1);
+  const crit = thr * 1.67;
+
+  DOM.lagValue.textContent = Math.floor(elapsed) + 's';
+  if (elapsed >= crit) {
+    DOM.lagBlock.className  = 'lag-block lag-crit';
+    DOM.lagIcon.textContent = '⚠️';
+    sv.classList.remove('aging'); sv.classList.add('stale');
+    setSignal(0, 'Perdu');
+    if (!STATE.stale) { STATE.stale = true; checkOverLimit(); }
+  } else if (elapsed >= thr) {
+    DOM.lagBlock.className  = 'lag-block lag-warn';
+    DOM.lagIcon.textContent = '⚠️';
+    sv.classList.add('aging'); sv.classList.remove('stale');
+  } else {
+    DOM.lagBlock.className  = 'lag-block';
+    DOM.lagIcon.textContent = '⏱';
+    sv.classList.remove('aging', 'stale');
+  }
+  if (elapsed < crit && STATE.stale) { STATE.stale = false; checkOverLimit(); }
 }
 
 // ══════════════════════════════════════════════
-//  WAKE LOCK
+//  ÉCRAN TOUJOURS ALLUMÉ
 // ══════════════════════════════════════════════
 async function requestWakeLock() {
-  if (!('wakeLock' in navigator)) return;
+  if (!('wakeLock' in navigator) || STATE.wakeLock) return;
   try {
     STATE.wakeLock = await navigator.wakeLock.request('screen');
-    document.addEventListener('visibilitychange', async () => {
-      if (document.visibilityState === 'visible') {
-        STATE.wakeLock = await navigator.wakeLock.request('screen').catch(() => null);
-      }
-    });
-  } catch (e) {}
+    STATE.wakeLock.addEventListener('release', () => { STATE.wakeLock = null; });
+  } catch {}
 }
 
-// ── Démarrage ────────────────────────────────
 init();

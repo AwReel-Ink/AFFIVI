@@ -1,5 +1,6 @@
 /* ═══════════════════════════════════════════
-   Version 1.2
+   AFFIVI — Version 2.0 — style.css
+   © 2026 LEROY Aurélien — Tous droits réservés
 ═══════════════════════════════════════════ */
 /* ═══════════════════════════════════════════
    RESET & BASE
@@ -702,7 +703,8 @@ body {
   font-size: clamp(16px, 4vw, 22px);
   font-weight: 900;
   color: var(--accent);
-  letter-spacing: 0.35em;
+  letter-spacing: 0.2em;
+  white-space: nowrap;
   opacity: 0.7;
 }
 
@@ -727,7 +729,7 @@ body {
   transition: opacity 0.35s ease;
 }
 
-.overlay.active { opacity: 1; pointer-events: all; }
+.overlay.visible { opacity: 1; pointer-events: all; }
 
 /* Scrollbar */
 .settings-inner::-webkit-scrollbar       { width: 4px; }
@@ -752,10 +754,99 @@ body {
 .mode-btn:active        { transform: scale(0.88); }
 .mode-btn[data-mode="soft"] { border-color: var(--accent); }
 
-.mode-label {
-  font-size: 0.65rem;
-  opacity: 0.7;
-  text-align: center;
-  margin-top: 2px;
-  letter-spacing: 0.03em;
+.mode-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
 }
+
+.mode-label {
+  font-size: clamp(9px, 2.2vw, 11px);
+  color: var(--text2);
+  text-align: center;
+  letter-spacing: 0.03em;
+  line-height: 1;
+}
+
+/* ═══════════════════════════════════════════
+   v2.0 — ÉTATS DE FRAÎCHEUR & LIMITATION
+═══════════════════════════════════════════ */
+
+/* Vitesse qui n'est plus à jour */
+.speed-value.aging {
+  opacity: 0.55;
+}
+
+.speed-value.stale {
+  opacity: 0.22;
+  filter: grayscale(1);
+  animation: none;
+  text-shadow: none;
+}
+
+.speed-value.waiting { opacity: 0.35; }
+
+/* Limitation estimée (pas de panneau connu dans OSM) */
+.limit-ring.estimated { border-style: dashed; }
+
+.limit-label.estimated { color: var(--warn); }
+
+/* Ligne d'état (chargement des routes, erreurs GPS…) */
+.status-line {
+  font-family: var(--font-main);
+  font-size: clamp(10px, 2.3vw, 12px);
+  color: var(--text2);
+  opacity: 0.75;
+  min-height: 16px;
+  text-align: center;
+  letter-spacing: 0.04em;
+}
+
+.status-line.warn { color: var(--warn); opacity: 1; }
+.status-line.error { color: var(--danger); opacity: 1; }
+
+/* Options texte (stabilisation) */
+.lag-opt.text-opt {
+  font-family: var(--font-main);
+  font-size: clamp(11px, 2.8vw, 14px);
+  padding: clamp(10px, 2.5vw, 14px) 4px;
+}
+
+.option-hint {
+  font-size: clamp(10px, 2.4vw, 12px);
+  color: var(--text2);
+  line-height: 1.5;
+  min-height: 2.6em;
+}
+
+.legend-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: clamp(11px, 2.5vw, 13px);
+  color: var(--text2);
+  line-height: 1.45;
+}
+
+.legend-sign {
+  display: inline-block;
+  width: 1.4em;
+  height: 1.4em;
+  border-radius: 50%;
+  border: 3px solid #cc0000;
+  background: #fff;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+
+.legend-sign.dashed { border-style: dashed; }
+
+.osm-credit {
+  font-size: clamp(10px, 2.3vw, 12px);
+  color: var(--text2);
+  line-height: 1.5;
+}
+
+.osm-credit a { color: var(--accent); }

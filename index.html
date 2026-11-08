@@ -1,15 +1,19 @@
-  <!-- Version 1.2 -->
 <!DOCTYPE html>
+<!-- AFFIVI — Version 2.0 -->
 <html lang="fr">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#0a0a0f" id="meta-theme" />
+  <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="AFFIVI" />
+  <meta name="description" content="AFFIchage VItesse — vitesse GPS et limitation de la route en temps réel" />
   <title>AFFIVI</title>
   <link rel="manifest" href="manifest.json" />
+  <link rel="icon" href="icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <link rel="stylesheet" href="style.css" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -20,9 +24,9 @@
   <!-- ÉCRAN PRINCIPAL -->
   <main class="main-screen" id="main-screen">
 
-    <!-- HEADER -->
+    <!-- BARRE DU HAUT -->
     <header class="top-bar">
-      <div class="signal-block">
+      <div class="signal-block" title="Précision GPS">
         <div class="signal-bars" id="signal-bars">
           <span class="bar b1"></span>
           <span class="bar b2"></span>
@@ -35,12 +39,14 @@
       <div class="app-name">AFFIVI</div>
 
       <div class="top-right">
-        <div class="lag-block" id="lag-block">
+        <div class="lag-block" id="lag-block" title="Temps depuis la dernière position GPS">
           <span class="lag-icon" id="lag-icon">⏱</span>
           <span class="lag-value" id="lag-value">--</span>
         </div>
-        <button class="mode-btn" id="mode-btn" data-mode="car" title="Mode voiture">🚗</button>
-          <div id="mode-label" class="mode-label">Voiture</div>
+        <div class="mode-wrap">
+          <button class="mode-btn" id="mode-btn" data-mode="car" title="Mode voiture" aria-label="Changer de mode">🚗</button>
+          <span class="mode-label" id="mode-label">Voiture</span>
+        </div>
         <button class="settings-btn" id="settings-btn" aria-label="Paramètres">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="3"/>
@@ -64,7 +70,7 @@
         <div class="speed-value" id="speed-value">--</div>
         <div class="speed-unit">km/h</div>
       </div>
-      <button class="start-btn" id="start-btn">Activer le GPS</button>
+      <button class="start-btn" id="start-btn">▶ Activer le GPS</button>
     </section>
 
     <!-- LIMITATION -->
@@ -78,6 +84,7 @@
         <div class="limit-label" id="limit-label">Limitation</div>
       </div>
       <div class="road-type" id="road-type"></div>
+      <div class="status-line" id="status-line"></div>
     </section>
 
   </main>
@@ -127,15 +134,38 @@
           </div>
         </section>
 
+        <!-- STABILISATION -->
+        <section class="settings-section">
+          <h3 class="section-label">Stabilisation de la vitesse</h3>
+          <div class="lag-options" id="smooth-options">
+            <button class="lag-opt text-opt" data-smooth="reactive">Réactive</button>
+            <button class="lag-opt text-opt active" data-smooth="balanced">Équilibrée</button>
+            <button class="lag-opt text-opt" data-smooth="stable">Stable</button>
+          </div>
+          <p class="option-hint" id="smooth-hint"></p>
+        </section>
+
         <!-- SEUIL LAG -->
         <section class="settings-section">
           <h3 class="section-label">Alerte signal GPS</h3>
-          <p class="section-desc">Délai sans mise à jour GPS avant alerte</p>
+          <p class="section-desc">Délai sans nouvelle position GPS avant alerte. La vitesse devient grisée quand elle n'est plus à jour.</p>
           <div class="lag-options" id="lag-options">
             <button class="lag-opt" data-lag="2">2s</button>
             <button class="lag-opt active" data-lag="3">3s</button>
             <button class="lag-opt" data-lag="5">5s</button>
+            <button class="lag-opt" data-lag="10">10s</button>
           </div>
+        </section>
+
+        <!-- LÉGENDE -->
+        <section class="settings-section">
+          <h3 class="section-label">Comprendre l'affichage</h3>
+          <ul class="legend-list">
+            <li><span class="legend-sign"></span><strong>Limitation</strong> : valeur du panneau enregistrée dans OpenStreetMap.</li>
+            <li><span class="legend-sign dashed"></span><strong>Estimée</strong> : aucun panneau connu, valeur déduite des règles générales du Code de la route (type de voie, agglomération).</li>
+            <li><strong>--</strong> : limitation inconnue sur cette voie.</li>
+            <li><strong>🚗 / 🚲</strong> : en mode vélo, les pistes cyclables et chemins sont pris en compte et les autoroutes ignorées.</li>
+          </ul>
         </section>
 
         <!-- DÉDOUANEMENT -->
@@ -147,16 +177,22 @@
             et d'OpenStreetMap, et peuvent être inexactes ou non à jour.
             L'utilisation d'AFFIVI ne dispense en aucun cas le conducteur de respecter
             le Code de la Route et les panneaux de signalisation en vigueur.
+            Ne manipulez pas votre téléphone en conduisant.
             Le créateur décline toute responsabilité en cas d'accident, d'infraction
             ou de dommage résultant de l'utilisation de cette application.
+          </p>
+          <p class="osm-credit">
+            Données routières © les contributeurs
+            <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>,
+            licence ODbL, via l'API Overpass.
           </p>
         </section>
 
       </div>
 
-      <!-- FOOTER CRÉATEUR -->
+      <!-- PIED DE PAGE CRÉATEUR -->
       <footer class="settings-footer">
-        <div class="footer-logo">AFFIVI - Version 1.2</div>
+        <div class="footer-logo">AFFIVI - Version 2.0</div>
         <span class="footer-copy">© 2026 — LEROY Aurélien — Tous droits réservés</span>
       </footer>
 
@@ -166,6 +202,7 @@
   <!-- OVERLAY -->
   <div class="overlay" id="overlay"></div>
 
+  <script src="engine.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
